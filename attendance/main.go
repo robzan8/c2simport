@@ -1,17 +1,12 @@
 package main
 
 import (
-	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"flag"
-	"io"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
-	"strconv"
-	"strings"
 )
 
 var (
@@ -19,70 +14,33 @@ var (
 	client http.Client
 )
 
-const postUrl = "https://c2s.gnucoop.io/api/student"
+const baseUrl = "https://cheese2school.gnucoop.io/api"
 
 func main() {
 	flag.StringVar(&auth, "auth", "", "Authorization header")
 	flag.Parse()
-	args := flag.Args()
 	log.SetFlags(0)
 
-	if len(args) == 0 {
-		log.Fatal(`No input files provided.
-Usage: c2simport -auth="Bearer blabla" table.csv`)
-	}
-
-	for _, fileName := range args {
-		c2sImportCsv(fileName)
-	}
+	readStudentList()
 }
 
-func c2sImportCsv(fileName string) {
-	f, err := os.Open(fileName)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer f.Close()
-
-	r := csv.NewReader(f)
-	for {
-		rec, err := r.Read()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			log.Fatal(err)
-		}
-		c2sImportRecord(rec)
-	}
-}
-
-type Line struct {
+type Student struct {
+	Id      int    `json:"id"`
 	Name    string `json:"identifier"`
-	Gender  string `json:"gender"`
 	ClassId int    `json:"student_class_id"`
+	Gender  string `json:"gender"`
 }
 
-func c2sImportRecord(rec []string) {
-	line := Line{
-		Name:   rec[0],
-		Gender: strings.ToLower(rec[1]),
-	}
-	var err error
-	line.ClassId, err = strconv.Atoi(rec[2])
-	if err != nil {
-		log.Fatal("class id is not an integer")
-	}
-	body, err := json.Marshal(&line)
-	if err != nil {
-		log.Fatal(err)
-	}
+var studentList struct {
+	Students []Student `json:"results"`
+}
 
-	req, err := http.NewRequest("POST", postUrl, bytes.NewReader(body))
+func readStudentList() {
+	fmt.Println("Reading student list...")
+	req, err := http.NewRequest("GET", baseUrl+"/student", nil)
 	if err != nil {
 		log.Fatal(err)
 	}
-	req.Header.Add("Content-Type", "application/json")
 	if auth != "" {
 		req.Header.Add("Authorization", auth)
 	}
@@ -92,11 +50,16 @@ func c2sImportRecord(rec []string) {
 		log.Fatal(err)
 	}
 	defer resp.Body.Close()
-	body, err = ioutil.ReadAll(resp.Body)
+	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if resp.StatusCode != http.StatusCreated {
+	if resp.StatusCode != http.StatusOK {
 		log.Fatalf("Unexpected response with code %d:\n%s", resp.StatusCode, body)
 	}
+	err = json.Unmarshal(body, &studentList)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%v\n", studentList.Students[0:5])
 }
