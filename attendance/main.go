@@ -1,12 +1,16 @@
 package main
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 )
 
@@ -24,8 +28,13 @@ func main() {
 	flag.Parse()
 	log.SetFlags(0)
 
+	if classId == -1 {
+		log.Fatal("Error: must provide the class id")
+	}
+
 	readStudentList()
 	readAttendanceList()
+	importAttendanceFromCsv()
 }
 
 type Student struct {
@@ -35,7 +44,7 @@ type Student struct {
 	Gender  string `json:"gender"`
 }
 
-var studentByName = make(map[string]Student)
+var studentByName = make(map[string]*Student)
 
 func readStudentList() {
 	fmt.Println("Reading student list...")
@@ -67,7 +76,8 @@ func readStudentList() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	for _, s := range studentList.Students {
+	for i := range studentList.Students {
+		s := &studentList.Students[i]
 		studentByName[strings.ToLower(strings.TrimSpace(s.Name))] = s
 	}
 	fmt.Printf("%v\n", studentList.Students[0:5])
@@ -75,11 +85,12 @@ func readStudentList() {
 
 type Presence struct {
 	StudentId int  `json:"id"`
-	Attendant bool `json:"attendant"`
+	Present   bool `json:"attendant"`
 }
 
 type Attendance struct {
 	Id         int        `json:"id"`
+	CreatedBy  int        `json:"created_by_id"`
 	ClassId    int        `json:"student_class_id"`
 	NumMales   int        `json:"male"`
 	NumFemales int        `json:"female"`
@@ -87,7 +98,7 @@ type Attendance struct {
 	Register   []Presence `json:"register"`
 }
 
-var attendanceByDate = make(map[string]Attendance)
+var attendanceByDate = make(map[string]*Attendance)
 
 func readAttendanceList() {
 	fmt.Println("Reading attendance list...")
@@ -119,8 +130,74 @@ func readAttendanceList() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	for _, a := range attendanceList.Attendances {
-		attendanceByDate[a.Date[0:10]] = a
+	for i := range attendanceList.Attendances {
+		a := &attendanceList.Attendances[i]
+		if a.ClassId == classId {
+			attendanceByDate[a.Date[0:10]] = a
+		}
 	}
 	fmt.Printf("%v\n", attendanceList.Attendances[0])
+}
+
+func importAttendanceFromCsv() {
+	fmt.Println("Reading attendance data form csv...")
+	f, err := os.Open("./data/" + strconv.Itoa(classId) + ".csv")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	for {
+		rec, err := r.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Fatal(err)
+		}
+		importAttendanceRecord(rec)
+	}
+}
+
+func importAttendanceRecord(rec []string) {
+	studName := rec[0]
+	stud, ok := studentByName[strings.ToLower(strings.TrimSpace(studName))]
+	if !ok {
+		log.Fatalf("Can't find student %s", studName)
+	}
+
+	date := rec[1]
+	att, attExists := attendanceByDate[date]
+	if !attExists {
+		att = &Attendance{
+			CreatedBy: 1, // admin
+			ClassId:   classId,
+			Date:      date,
+		}
+		attendanceByDate[date] = att
+	}
+
+	if stud.Gender == "m" || stud.Gender == "M" {
+		att.NumMales++
+	}
+	if stud.Gender == "f" || stud.Gender == "F" {
+		att.NumFemales++
+	}
+
+	studPresent := true
+	if rec[2] == "assente" {
+		studPresent = false
+	}
+	for i := range att.Register {
+		p := &att.Register[i]
+		if p.StudentId == stud.Id {
+			p.Present = studPresent
+			return
+		}
+	}
+	att.Register = append(att.Register, Presence{
+		StudentId: stud.Id,
+		Present:   studPresent,
+	})
 }
