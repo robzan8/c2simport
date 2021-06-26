@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"flag"
@@ -35,6 +36,7 @@ func main() {
 	readStudentList()
 	readAttendanceList()
 	importAttendanceFromCsv()
+	postAttendances()
 }
 
 type Student struct {
@@ -133,6 +135,8 @@ func readAttendanceList() {
 	for i := range attendanceList.Attendances {
 		a := &attendanceList.Attendances[i]
 		if a.ClassId == classId {
+			a.NumMales = 0
+			a.NumFemales = 0
 			attendanceByDate[a.Date[0:10]] = a
 		}
 	}
@@ -178,17 +182,18 @@ func importAttendanceRecord(rec []string) {
 		attendanceByDate[date] = att
 	}
 
-	if stud.Gender == "m" || stud.Gender == "M" {
-		att.NumMales++
-	}
-	if stud.Gender == "f" || stud.Gender == "F" {
-		att.NumFemales++
-	}
-
 	studPresent := true
 	if rec[2] == "assente" {
 		studPresent = false
 	}
+
+	if studPresent && stud.Gender == "m" {
+		att.NumMales++
+	}
+	if studPresent && stud.Gender == "f" {
+		att.NumFemales++
+	}
+
 	for i := range att.Register {
 		p := &att.Register[i]
 		if p.StudentId == stud.Id {
@@ -200,4 +205,42 @@ func importAttendanceRecord(rec []string) {
 		StudentId: stud.Id,
 		Present:   studPresent,
 	})
+}
+
+func postAttendances() {
+	for _, att := range attendanceByDate {
+		body, err := json.Marshal(att)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		method := "POST"
+		url := baseUrl + "/attendance"
+		if att.Id > 0 {
+			method = "PATCH"
+			url += "/" + strconv.Itoa(att.Id)
+		}
+		req, err := http.NewRequest(method, url, bytes.NewReader(body))
+		if err != nil {
+			log.Fatal(err)
+		}
+		req.Header.Add("Content-Type", "application/json")
+		if auth != "" {
+			req.Header.Add("Authorization", auth)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, err = ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if method == "POST" && resp.StatusCode != http.StatusCreated ||
+			method == "PATCH" && resp.StatusCode != http.StatusOK {
+			log.Fatalf("Unexpected response with code %d:\n%s", resp.StatusCode, body)
+		}
+	}
 }
