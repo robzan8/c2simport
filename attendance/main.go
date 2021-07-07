@@ -144,7 +144,7 @@ func readAttendanceList() {
 }
 
 func importAttendanceFromCsv() {
-	fmt.Println("Reading attendance data form csv...")
+	fmt.Println("Reading attendance data from csv...")
 	f, err := os.Open("./data/" + strconv.Itoa(classId) + ".csv")
 	if err != nil {
 		log.Fatal(err)
@@ -162,13 +162,22 @@ func importAttendanceFromCsv() {
 		}
 		importAttendanceRecord(rec)
 	}
+
+	fmt.Println("The following students couldn't be found:")
+	for stud := range studentsNotFound {
+		fmt.Printf("%s, ", stud)
+	}
+	fmt.Println("")
 }
+
+var studentsNotFound = make(map[string]bool)
 
 func importAttendanceRecord(rec []string) {
 	studName := rec[0]
 	stud, ok := studentByName[strings.ToLower(strings.TrimSpace(studName))]
 	if !ok {
-		log.Fatalf("Can't find student %s", studName)
+		studentsNotFound[studName] = true
+		return
 	}
 
 	date := rec[1]
@@ -208,6 +217,7 @@ func importAttendanceRecord(rec []string) {
 }
 
 func postAttendances() {
+	fmt.Println("Posting/patching attendances...")
 	for _, att := range attendanceByDate {
 		body, err := json.Marshal(att)
 		if err != nil {
