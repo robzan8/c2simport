@@ -80,9 +80,11 @@ func readStudentList() {
 	}
 	for i := range studentList.Students {
 		s := &studentList.Students[i]
-		studentByName[strings.ToLower(strings.TrimSpace(s.Name))] = s
+		studentByName[canonicalizeName(s.Name)] = s
+		if s.ClassId == classId {
+			fmt.Println(s.Name)
+		}
 	}
-	fmt.Printf("%v\n", studentList.Students[0:5])
 }
 
 type Presence struct {
@@ -165,16 +167,23 @@ func importAttendanceFromCsv() {
 
 	fmt.Println("The following students couldn't be found:")
 	for stud := range studentsNotFound {
-		fmt.Printf("%s, ", stud)
+		fmt.Println(stud)
 	}
-	fmt.Println("")
 }
 
 var studentsNotFound = make(map[string]bool)
 
+func canonicalizeName(name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.ToLower(name)
+	name = strings.ReplaceAll(name, "  ", " ")
+	name = strings.ReplaceAll(name, "  ", " ")
+	return name
+}
+
 func importAttendanceRecord(rec []string) {
 	studName := rec[0]
-	stud, ok := studentByName[strings.ToLower(strings.TrimSpace(studName))]
+	stud, ok := studentByName[canonicalizeName(studName)]
 	if !ok {
 		studentsNotFound[studName] = true
 		return
