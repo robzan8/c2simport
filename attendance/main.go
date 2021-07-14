@@ -178,6 +178,7 @@ func canonicalizeName(name string) string {
 	name = strings.ToLower(name)
 	name = strings.ReplaceAll(name, "  ", " ")
 	name = strings.ReplaceAll(name, "  ", " ")
+	name = strings.ReplaceAll(name, ".", "")
 	return name
 }
 
